@@ -12,6 +12,7 @@ export interface Category {
   id: number
   name: string
   colour: string
+  parent_id: number | null
   archived: number
   created_at: string
 }
@@ -57,6 +58,7 @@ export interface IpcApi {
     create: (data: Omit<Category, 'id' | 'created_at'>) => Promise<Category>
     update: (id: number, data: Partial<Omit<Category, 'id' | 'created_at'>>) => Promise<Category>
     archive: (id: number) => Promise<void>
+    unarchive: (id: number) => Promise<void>
   }
   transactions: {
     list: (filters?: { account_id?: number; start?: string; end?: string }) => Promise<Transaction[]>

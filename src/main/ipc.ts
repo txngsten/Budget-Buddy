@@ -40,20 +40,39 @@ export function registerIpcHandlers(): void {
 
   // --- Categories ---
   ipcMain.handle('categories:list', (): Category[] => {
-    return getDb().prepare('SELECT * FROM categories ORDER BY name').all() as Category[]
+    return getDb().prepare(
+      'SELECT * FROM categories ORDER BY COALESCE(parent_id, id), parent_id IS NOT NULL, name'
+    ).all() as Category[]
   })
 
   ipcMain.handle('categories:create', (_, data: Omit<Category, 'id' | 'created_at'>): Category => {
     const db = getDb()
+
+    if (data.parent_id != null) {
+      const parent = db.prepare('SELECT * FROM categories WHERE id = ?').get(data.parent_id) as Category | undefined
+      if (!parent) throw new Error('Parent category not found.')
+      if (parent.parent_id != null) throw new Error('Cannot nest categories more than one level deep.')
+    }
+
     const result = db.prepare(
-      `INSERT INTO categories (name, colour, archived, created_at)
-       VALUES (@name, @colour, @archived, @created_at)`
-    ).run({ ...data, created_at: now() })
+      `INSERT INTO categories (name, colour, parent_id, archived, created_at)
+       VALUES (@name, @colour, @parent_id, @archived, @created_at)`
+    ).run({ ...data, parent_id: data.parent_id ?? null, created_at: now() })
     return db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid) as Category
   })
 
   ipcMain.handle('categories:update', (_, id: number, data: Partial<Omit<Category, 'id' | 'created_at'>>): Category => {
     const db = getDb()
+
+    if ('parent_id' in data && data.parent_id != null) {
+      const hasChildren = db.prepare('SELECT COUNT(*) as cnt FROM categories WHERE parent_id = ?').get(id) as { cnt: number }
+      if (hasChildren.cnt > 0) throw new Error('This category has subcategories and cannot become a subcategory itself.')
+
+      const parent = db.prepare('SELECT * FROM categories WHERE id = ?').get(data.parent_id) as Category | undefined
+      if (!parent) throw new Error('Parent category not found.')
+      if (parent.parent_id != null) throw new Error('Cannot nest categories more than one level deep.')
+    }
+
     const fields = Object.keys(data)
       .map(k => `${k} = @${k}`)
       .join(', ')
@@ -62,7 +81,19 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('categories:archive', (_, id: number): void => {
-    getDb().prepare('UPDATE categories SET archived = 1 WHERE id = ?').run(id)
+    getDb().prepare('UPDATE categories SET archived = 1 WHERE id = ? OR parent_id = ?').run(id, id)
+  })
+
+  ipcMain.handle('categories:unarchive', (_, id: number): void => {
+    const db = getDb()
+    const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as Category | undefined
+    if (!cat) return
+
+    if (cat.parent_id != null) {
+      db.prepare('UPDATE categories SET archived = 0 WHERE id = ? OR id = ?').run(id, cat.parent_id)
+    } else {
+      db.prepare('UPDATE categories SET archived = 0 WHERE id = ?').run(id)
+    }
   })
 
   // --- Transactions ---

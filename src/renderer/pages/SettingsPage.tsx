@@ -4,6 +4,7 @@ import AccountForm from '../components/AccountForm'
 import CategoryForm from '../components/CategoryForm'
 import RecurringRuleForm from '../components/RecurringRuleForm'
 import { formatAud } from '../lib/format'
+import { buildCategoryTree, getCategoryDisplayName } from '../lib/categories'
 
 interface Props {
   onDataChanged: () => void
@@ -17,6 +18,7 @@ export default function SettingsPage({ onDataChanged }: Props) {
   const [showNewAccount, setShowNewAccount] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [showNewCategory, setShowNewCategory] = useState(false)
+  const [addSubcategoryParent, setAddSubcategoryParent] = useState<Category | null>(null)
   const [editingRule, setEditingRule] = useState<RecurringRule | null>(null)
   const [showNewRule, setShowNewRule] = useState(false)
 
@@ -53,6 +55,13 @@ export default function SettingsPage({ onDataChanged }: Props) {
   async function handleArchiveCategory(id: number) {
     await window.api.categories.archive(id)
     loadCategories()
+    onDataChanged()
+  }
+
+  async function handleUnarchiveCategory(id: number) {
+    await window.api.categories.unarchive(id)
+    loadCategories()
+    onDataChanged()
   }
 
   async function handleDeleteRule(id: number) {
@@ -71,6 +80,9 @@ export default function SettingsPage({ onDataChanged }: Props) {
   const archivedCategories = categories.filter(c => c.archived)
   const accountMap = new Map(accounts.map(a => [a.id, a]))
   const categoryMap = new Map(categories.map(c => [c.id, c]))
+
+  const activeCategoryTree = buildCategoryTree(activeCategories)
+  const archivedCategoryTree = buildCategoryTree(archivedCategories)
 
   function getNextDueDate(rule: RecurringRule): string {
     if (!rule.active) return 'Inactive'
@@ -180,41 +192,62 @@ export default function SettingsPage({ onDataChanged }: Props) {
       <section className="settings-section">
         <div className="settings-section-header">
           <h3>Categories</h3>
-          <button className="btn btn-primary" onClick={() => setShowNewCategory(true)}>
+          <button className="btn btn-primary" onClick={() => { setShowNewCategory(true); setAddSubcategoryParent(null) }}>
             Add Category
           </button>
         </div>
 
         {showNewCategory && (
           <CategoryForm
-            onSave={() => { setShowNewCategory(false); loadCategories() }}
-            onCancel={() => setShowNewCategory(false)}
+            categories={categories}
+            parentCategory={addSubcategoryParent ?? undefined}
+            onSave={() => { setShowNewCategory(false); setAddSubcategoryParent(null); loadCategories(); onDataChanged() }}
+            onCancel={() => { setShowNewCategory(false); setAddSubcategoryParent(null) }}
           />
         )}
 
         {editingCategory && (
           <CategoryForm
             category={editingCategory}
-            onSave={() => { setEditingCategory(null); loadCategories() }}
+            categories={categories}
+            onSave={() => { setEditingCategory(null); loadCategories(); onDataChanged() }}
             onCancel={() => setEditingCategory(null)}
           />
         )}
 
         <div className="settings-list">
-          {activeCategories.map(category => (
-            <div key={category.id} className="settings-list-item">
-              <div className="settings-list-item-info">
-                <span
-                  className="category-swatch"
-                  style={{ backgroundColor: category.colour }}
-                />
-                <span className="settings-list-item-name">{category.name}</span>
+          {activeCategoryTree.map(parent => (
+            <React.Fragment key={parent.id}>
+              <div className="settings-list-item">
+                <div className="settings-list-item-info">
+                  <span className="category-swatch" style={{ backgroundColor: parent.colour }} />
+                  <span className="settings-list-item-name">{parent.name}</span>
+                  {parent.children.length > 0 && (
+                    <span className="settings-list-item-meta">{parent.children.length} sub</span>
+                  )}
+                </div>
+                <div className="settings-list-item-actions">
+                  <button className="btn btn-small" onClick={() => {
+                    setAddSubcategoryParent(parent)
+                    setShowNewCategory(true)
+                  }}>+ Sub</button>
+                  <button className="btn btn-small" onClick={() => setEditingCategory(parent)}>Edit</button>
+                  <button className="btn btn-small btn-danger" onClick={() => handleArchiveCategory(parent.id)}>Archive</button>
+                </div>
               </div>
-              <div className="settings-list-item-actions">
-                <button className="btn btn-small" onClick={() => setEditingCategory(category)}>Edit</button>
-                <button className="btn btn-small btn-danger" onClick={() => handleArchiveCategory(category.id)}>Archive</button>
-              </div>
-            </div>
+              {parent.children.map(child => (
+                <div key={child.id} className="settings-list-item settings-list-item--child">
+                  <div className="settings-list-item-info">
+                    <span className="category-swatch" style={{ backgroundColor: child.colour }} />
+                    <span className="settings-list-item-name">{child.name}</span>
+                  </div>
+                  <div className="settings-list-item-actions">
+                    <button className="btn btn-small" onClick={() => setEditingCategory(child)}>Edit</button>
+                    <button className="btn btn-small btn-danger" onClick={() => handleArchiveCategory(child.id)}>Archive</button>
+                  </div>
+                </div>
+              ))}
+            </React.Fragment>
           ))}
           {activeCategories.length === 0 && !showNewCategory && (
             <p className="settings-empty">No categories yet. Create one to organise your transactions.</p>
@@ -225,16 +258,29 @@ export default function SettingsPage({ onDataChanged }: Props) {
           <>
             <h4 className="settings-archived-header">Archived</h4>
             <div className="settings-list">
-              {archivedCategories.map(category => (
-                <div key={category.id} className="settings-list-item archived">
-                  <div className="settings-list-item-info">
-                    <span
-                      className="category-swatch"
-                      style={{ backgroundColor: category.colour }}
-                    />
-                    <span className="settings-list-item-name">{category.name}</span>
+              {archivedCategoryTree.map(parent => (
+                <React.Fragment key={parent.id}>
+                  <div className="settings-list-item archived">
+                    <div className="settings-list-item-info">
+                      <span className="category-swatch" style={{ backgroundColor: parent.colour }} />
+                      <span className="settings-list-item-name">{parent.name}</span>
+                    </div>
+                    <div className="settings-list-item-actions">
+                      <button className="btn btn-small" onClick={() => handleUnarchiveCategory(parent.id)}>Unarchive</button>
+                    </div>
                   </div>
-                </div>
+                  {parent.children.map(child => (
+                    <div key={child.id} className="settings-list-item settings-list-item--child archived">
+                      <div className="settings-list-item-info">
+                        <span className="category-swatch" style={{ backgroundColor: child.colour }} />
+                        <span className="settings-list-item-name">{child.name}</span>
+                      </div>
+                      <div className="settings-list-item-actions">
+                        <button className="btn btn-small" onClick={() => handleUnarchiveCategory(child.id)}>Unarchive</button>
+                      </div>
+                    </div>
+                  ))}
+                </React.Fragment>
               ))}
             </div>
           </>
@@ -272,13 +318,14 @@ export default function SettingsPage({ onDataChanged }: Props) {
           {rules.map(rule => {
             const account = accountMap.get(rule.account_id)
             const category = rule.category_id ? categoryMap.get(rule.category_id) : null
+            const categoryDisplay = category ? getCategoryDisplayName(category, categoryMap) : null
             return (
               <div key={rule.id} className={`settings-list-item ${!rule.active ? 'archived' : ''}`}>
                 <div className="settings-list-item-info">
                   <span className="settings-list-item-name">{rule.title}</span>
                   <span className="settings-list-item-meta">
                     {formatAud(rule.amount)} · {rule.frequency} · {account?.name ?? '?'}
-                    {category && ` · ${category.name}`}
+                    {categoryDisplay && ` · ${categoryDisplay}`}
                   </span>
                   <span className="settings-list-item-meta recurring-next">
                     Next: {getNextDueDate(rule)}

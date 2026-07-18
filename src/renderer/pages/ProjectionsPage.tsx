@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import type { Account, Category, Transaction } from '../../shared/types'
 import { formatAud } from '../lib/format'
+import { getCategoryDisplayName } from '../lib/categories'
 
 interface Props {
   accounts: Account[]
@@ -50,10 +51,22 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
 
   const hasData = lookbackTxs.length > 0
 
+  const sortedTxs = [...transactions].sort((a, b) => a.occurred_at.localeCompare(b.occurred_at))
+
   function computeBalance(account: Account): number {
     const acctTxs = transactions.filter(t => t.account_id === account.id)
     let balance = account.seed_balance
     for (const t of acctTxs) {
+      balance += t.type === 'income' ? t.amount : -t.amount
+    }
+    return balance
+  }
+
+  function computeBalanceAtDate(accountId: number, seedBalance: number, upTo: Date): number {
+    let balance = seedBalance
+    for (const t of sortedTxs) {
+      if (t.account_id !== accountId) continue
+      if (new Date(t.occurred_at) > upTo) break
       balance += t.type === 'income' ? t.amount : -t.amount
     }
     return balance
@@ -74,44 +87,72 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
     }
   }
 
-  // Build projection data
-  const projectionData: Record<string, number | string>[] = []
-  const accountBalances = new Map<number, number>()
-  for (const a of activeAccounts) {
-    accountBalances.set(a.id, computeBalance(a))
+  // --- Build combined chart data: historical + projected ---
+  const chartData: Record<string, number | string | undefined>[] = []
+  const todayLabel = now.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+
+  // Historical portion (lookback days up to and including today)
+  for (let i = 0; i <= lookback; i++) {
+    const day = new Date(lookbackStart)
+    day.setDate(day.getDate() + i)
+    const dayEnd = new Date(day)
+    dayEnd.setHours(23, 59, 59, 999)
+    const label = day.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+
+    const point: Record<string, number | string | undefined> = { date: label }
+
+    let combinedBal = 0
+    for (const a of activeAccounts) {
+      const bal = computeBalanceAtDate(a.id, a.seed_balance, dayEnd)
+      point[a.name + '_actual'] = Math.round(bal)
+      combinedBal += bal
+    }
+    point['Combined_actual'] = Math.round(combinedBal)
+
+    // On today, also set the projected keys so the lines connect
+    if (i === lookback) {
+      point['Combined_projected'] = Math.round(combinedBal)
+      for (const a of activeAccounts) {
+        point[a.name + '_projected'] = point[a.name + '_actual']
+      }
+    }
+
+    chartData.push(point)
   }
 
+  // Projected portion (day 1 to horizon, after today)
   const accountRates = new Map<number, { dailyNet: number }>()
   for (const a of activeAccounts) {
     accountRates.set(a.id, computeDailyRates(a.id))
   }
   const combinedRates = computeDailyRates()
 
-  let combinedBalance = activeAccounts.reduce((s, a) => s + computeBalance(a), 0)
+  const projectedBalances = new Map<number, number>()
+  for (const a of activeAccounts) {
+    projectedBalances.set(a.id, computeBalance(a))
+  }
+  let projectedCombined = activeAccounts.reduce((s, a) => s + computeBalance(a), 0)
 
-  for (let i = 0; i <= horizon; i++) {
+  for (let i = 1; i <= horizon; i++) {
     const day = new Date(now)
     day.setDate(day.getDate() + i)
     const label = day.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 
-    const point: Record<string, number | string> = { date: label }
+    const point: Record<string, number | string | undefined> = { date: label }
 
-    if (i > 0) {
-      combinedBalance += combinedRates.dailyNet
-      for (const a of activeAccounts) {
-        const bal = accountBalances.get(a.id)!
-        const rate = accountRates.get(a.id)!
-        accountBalances.set(a.id, bal + rate.dailyNet)
-      }
-    }
+    projectedCombined += combinedRates.dailyNet
+    point['Combined_projected'] = Math.round(projectedCombined)
 
-    point['Combined'] = Math.round(combinedBalance)
     for (const a of activeAccounts) {
-      point[a.name] = Math.round(accountBalances.get(a.id)!)
+      const bal = projectedBalances.get(a.id)! + accountRates.get(a.id)!.dailyNet
+      projectedBalances.set(a.id, bal)
+      point[a.name + '_projected'] = Math.round(bal)
     }
 
-    projectionData.push(point)
+    chartData.push(point)
   }
+
+  const xInterval = Math.max(0, Math.floor(chartData.length / 8) - 1)
 
   // Category breakdown for the horizon
   const categorySpend = new Map<string, { name: string; value: number; colour: string }>()
@@ -121,7 +162,7 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
     const cat = tx.category_id ? categoryMap.get(tx.category_id) : null
     const key = cat ? String(cat.id) : 'uncategorised'
     const entry = categorySpend.get(key) ?? {
-      name: cat?.name ?? 'Uncategorised',
+      name: cat ? getCategoryDisplayName(cat, categoryMap) : 'Uncategorised',
       value: 0,
       colour: cat?.colour ?? '#8e8e93',
     }
@@ -150,6 +191,8 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
       return next
     })
   }
+
+  const allLineNames = ['Combined', ...activeAccounts.map(a => a.name)]
 
   return (
     <div className="projections-page">
@@ -252,9 +295,9 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
           </div>
 
           <section className="chart-section">
-            <h4 className="chart-title">Projected Balance</h4>
+            <h4 className="chart-title">Balance — Actual &amp; Projected</h4>
             <div className="projection-legend">
-              {['Combined', ...activeAccounts.map(a => a.name)].map((name, i) => (
+              {allLineNames.map((name, i) => (
                 <button
                   key={name}
                   className={`projection-legend-item ${hiddenLines.has(name) ? 'hidden' : ''}`}
@@ -268,13 +311,13 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
                 </button>
               ))}
             </div>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={projectionData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 11, fill: 'var(--text-secondary)' }}
-                  interval={Math.max(0, Math.floor(projectionData.length / 6) - 1)}
+                  interval={xInterval}
                 />
                 <YAxis
                   tickFormatter={(v: number) => formatAud(v)}
@@ -282,7 +325,10 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
                   width={80}
                 />
                 <Tooltip
-                  formatter={(value) => formatAud(value as number)}
+                  formatter={(value, name) => {
+                    const clean = String(name ?? '').replace(/_actual$|_projected$/, '')
+                    return [formatAud(value as number), clean]
+                  }}
                   contentStyle={{
                     background: 'var(--bg-primary)',
                     border: '1px solid var(--border-color)',
@@ -290,25 +336,40 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
                     fontSize: 13,
                   }}
                 />
-                {!hiddenLines.has('Combined') && (
-                  <Line
-                    type="monotone"
-                    dataKey="Combined"
-                    stroke={ACCOUNT_COLOURS[0]}
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                )}
-                {activeAccounts.map((a, i) => (
-                  !hiddenLines.has(a.name) && (
+                <ReferenceLine
+                  x={todayLabel}
+                  stroke="var(--text-secondary)"
+                  strokeDasharray="4 4"
+                  label={{ value: 'Today', position: 'top', fontSize: 11, fill: 'var(--text-secondary)' }}
+                />
+
+                {/* Actual lines (solid) */}
+                {allLineNames.map((name, i) => (
+                  !hiddenLines.has(name) && (
                     <Line
-                      key={a.id}
+                      key={name + '_actual'}
                       type="monotone"
-                      dataKey={a.name}
-                      stroke={ACCOUNT_COLOURS[(i + 1) % ACCOUNT_COLOURS.length]}
-                      strokeWidth={1.5}
+                      dataKey={name + '_actual'}
+                      stroke={ACCOUNT_COLOURS[i % ACCOUNT_COLOURS.length]}
+                      strokeWidth={name === 'Combined' ? 2 : 1.5}
                       dot={false}
-                      strokeDasharray="4 2"
+                      connectNulls={false}
+                    />
+                  )
+                ))}
+
+                {/* Projected lines (dashed) */}
+                {allLineNames.map((name, i) => (
+                  !hiddenLines.has(name) && (
+                    <Line
+                      key={name + '_projected'}
+                      type="monotone"
+                      dataKey={name + '_projected'}
+                      stroke={ACCOUNT_COLOURS[i % ACCOUNT_COLOURS.length]}
+                      strokeWidth={name === 'Combined' ? 2 : 1.5}
+                      strokeDasharray="6 3"
+                      dot={false}
+                      connectNulls={false}
                     />
                   )
                 ))}

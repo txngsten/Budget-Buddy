@@ -14,6 +14,7 @@ const api: IpcApi = {
     create: (data) => ipcRenderer.invoke('categories:create', data),
     update: (id, data) => ipcRenderer.invoke('categories:update', id, data),
     archive: (id) => ipcRenderer.invoke('categories:archive', id),
+    unarchive: (id) => ipcRenderer.invoke('categories:unarchive', id),
   },
   transactions: {
     list: (filters) => ipcRenderer.invoke('transactions:list', filters),

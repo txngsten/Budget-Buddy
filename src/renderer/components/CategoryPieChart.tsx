@@ -2,6 +2,7 @@ import React from 'react'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import type { Transaction, Category } from '../../shared/types'
 import { formatAud } from '../lib/format'
+import { getCategoryDisplayName } from '../lib/categories'
 
 interface Props {
   transactions: Transaction[]
@@ -14,21 +15,26 @@ export default function CategoryPieChart({ transactions, categories, type, title
   const filtered = transactions.filter(t => t.type === type)
   const categoryMap = new Map(categories.map(c => [c.id, c]))
 
-  const grouped = new Map<string, { name: string; value: number; colour: string }>()
+  const grouped = new Map<string, { name: string; value: number; colour: string; parentId: number }>()
 
   for (const tx of filtered) {
     const cat = tx.category_id ? categoryMap.get(tx.category_id) : null
     const key = cat ? String(cat.id) : 'uncategorised'
     const entry = grouped.get(key) ?? {
-      name: cat?.name ?? 'Uncategorised',
+      name: cat ? getCategoryDisplayName(cat, categoryMap) : 'Uncategorised',
       value: 0,
       colour: cat?.colour ?? '#8e8e93',
+      parentId: cat ? (cat.parent_id ?? cat.id) : 0,
     }
     entry.value += tx.amount
     grouped.set(key, entry)
   }
 
-  const data = Array.from(grouped.values()).sort((a, b) => b.value - a.value)
+  const data = Array.from(grouped.values())
+    .sort((a, b) => {
+      if (a.parentId !== b.parentId) return a.parentId - b.parentId
+      return b.value - a.value
+    })
 
   if (data.length === 0) {
     return (

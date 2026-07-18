@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import type { Account, Category, Transaction } from '../../shared/types'
 import { parseDollars } from '../lib/format'
 import CategoryPieChart from './CategoryPieChart'
+import CategorySelect from './CategorySelect'
 import DateRangeSlider from './DateRangeSlider'
 
 interface Props {
@@ -40,7 +41,9 @@ export default function AddItemModal({
   const [showNewCategory, setShowNewCategory] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [newCatColour, setNewCatColour] = useState('#339AF0')
+  const [newCatParentId, setNewCatParentId] = useState<number | null>(null)
 
+  const [localCategories, setLocalCategories] = useState(categories)
   const [contextTxs, setContextTxs] = useState<Transaction[]>([])
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -49,7 +52,7 @@ export default function AddItemModal({
   const [spendStart, setSpendStart] = useState(toDateStr(thirtyDaysAgo))
   const [spendEnd, setSpendEnd] = useState(toDateStr(new Date()))
 
-  const activeCategories = categories.filter(c => !c.archived)
+  const topLevelCategories = localCategories.filter(c => !c.archived && c.parent_id === null)
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -122,11 +125,14 @@ export default function AddItemModal({
     const cat = await window.api.categories.create({
       name: newCatName.trim(),
       colour: newCatColour,
+      parent_id: newCatParentId,
       archived: 0,
     })
     setCategoryId(cat.id)
     setShowNewCategory(false)
     setNewCatName('')
+    setNewCatParentId(null)
+    setLocalCategories(await window.api.categories.list())
   }
 
   return (
@@ -172,16 +178,11 @@ export default function AddItemModal({
             <div className="form-field">
               <label className="form-label">Category</label>
               <div className="category-select-row">
-                <select
-                  className="form-input"
+                <CategorySelect
+                  categories={localCategories}
                   value={categoryId}
-                  onChange={e => setCategoryId(e.target.value === '' ? '' : Number(e.target.value))}
-                >
-                  <option value="">Uncategorised</option>
-                  {activeCategories.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                  onChange={setCategoryId}
+                />
                 <button
                   type="button"
                   className="btn btn-small"
@@ -198,6 +199,16 @@ export default function AddItemModal({
                     value={newCatName}
                     onChange={e => setNewCatName(e.target.value)}
                   />
+                  <select
+                    className="form-input"
+                    value={newCatParentId ?? ''}
+                    onChange={e => setNewCatParentId(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Top-level</option>
+                    {topLevelCategories.map(c => (
+                      <option key={c.id} value={c.id}>Sub of: {c.name}</option>
+                    ))}
+                  </select>
                   <input
                     type="color"
                     value={newCatColour}
@@ -264,7 +275,7 @@ export default function AddItemModal({
               />
               <CategoryPieChart
                 transactions={incomeTxs}
-                categories={categories}
+                categories={localCategories}
                 type="income"
                 title="Income by Category"
               />
@@ -277,7 +288,7 @@ export default function AddItemModal({
               />
               <CategoryPieChart
                 transactions={spendTxs}
-                categories={categories}
+                categories={localCategories}
                 type="spend"
                 title="Spend by Category"
               />

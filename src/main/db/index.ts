@@ -19,6 +19,8 @@ export function initDb(): void {
   db.pragma('foreign_keys = ON')
 
   runSchema()
+  runMigrations()
+  runIndexes()
 }
 
 function runSchema(): void {
@@ -35,8 +37,9 @@ function runSchema(): void {
 
     CREATE TABLE IF NOT EXISTS categories (
       id         INTEGER PRIMARY KEY,
-      name       TEXT NOT NULL UNIQUE,
+      name       TEXT NOT NULL,
       colour     TEXT NOT NULL,
+      parent_id  INTEGER REFERENCES categories(id),
       archived   INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
@@ -75,4 +78,66 @@ function runSchema(): void {
       applied_at TEXT NOT NULL
     );
   `)
+}
+
+function runIndexes(): void {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_parent_name
+      ON categories(COALESCE(parent_id, 0), name);
+  `)
+}
+
+interface Migration {
+  name: string
+  up: () => void
+}
+
+function runMigrations(): void {
+  const applied = new Set(
+    (db.prepare('SELECT name FROM migrations').all() as { name: string }[])
+      .map(r => r.name)
+  )
+
+  const migrations: Migration[] = [
+    {
+      name: '001_add_category_parent_id',
+      up() {
+        const hasParentId = (db.prepare("PRAGMA table_info(categories)").all() as { name: string }[])
+          .some(col => col.name === 'parent_id')
+
+        if (hasParentId) return
+
+        db.pragma('foreign_keys = OFF')
+        db.transaction(() => {
+          db.exec(`ALTER TABLE categories RENAME TO categories_old`)
+          db.exec(`
+            CREATE TABLE categories (
+              id         INTEGER PRIMARY KEY,
+              name       TEXT NOT NULL,
+              colour     TEXT NOT NULL,
+              parent_id  INTEGER REFERENCES categories(id),
+              archived   INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL
+            )
+          `)
+          db.exec(`
+            INSERT INTO categories (id, name, colour, archived, created_at)
+            SELECT id, name, colour, archived, created_at FROM categories_old
+          `)
+          db.exec(`DROP TABLE categories_old`)
+          db.exec(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_parent_name
+            ON categories(COALESCE(parent_id, 0), name)
+          `)
+        })()
+        db.pragma('foreign_keys = ON')
+      },
+    },
+  ]
+
+  for (const m of migrations) {
+    if (applied.has(m.name)) continue
+    m.up()
+    db.prepare('INSERT INTO migrations (name, applied_at) VALUES (?, ?)').run(m.name, new Date().toISOString())
+  }
 }

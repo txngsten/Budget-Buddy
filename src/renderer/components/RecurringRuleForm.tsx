@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { Account, Category, RecurringRule } from '../../shared/types'
+import CategorySelect from './CategorySelect'
 
 interface Props {
   accounts: Account[]
@@ -23,7 +24,6 @@ export default function RecurringRuleForm({ accounts, categories, rule, onSave, 
   const [error, setError] = useState('')
 
   const activeAccounts = accounts.filter(a => !a.archived)
-  const activeCategories = categories.filter(c => !c.archived)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -100,16 +100,11 @@ export default function RecurringRuleForm({ accounts, categories, rule, onSave, 
             <option key={a.id} value={a.id}>{a.name}</option>
           ))}
         </select>
-        <select
-          className="form-input"
+        <CategorySelect
+          categories={categories}
           value={categoryId}
-          onChange={e => setCategoryId(e.target.value === '' ? '' : Number(e.target.value))}
-        >
-          <option value="">Uncategorised</option>
-          {activeCategories.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+          onChange={setCategoryId}
+        />
         <input
           className="form-input form-input-short"
           placeholder="Amount ($)"

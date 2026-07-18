@@ -40,7 +40,10 @@ export default function AccountWidget({ account, accounts, combined }: Props) {
     .reduce((s, t) => s + t.amount, 0)
   const balance = seedBalance + totalIncome - totalSpend
 
-  const periodStart = getPeriodStart(period)
+  const earliestTx = transactions.length > 0
+    ? transactions.reduce((min, t) => t.occurred_at < min ? t.occurred_at : min, transactions[0].occurred_at)
+    : undefined
+  const periodStart = getPeriodStart(period, earliestTx ? new Date(earliestTx) : undefined)
   const now = new Date()
 
   const periodTxs = transactions.filter(t => new Date(t.occurred_at) >= periodStart)
@@ -66,6 +69,7 @@ export default function AccountWidget({ account, accounts, combined }: Props) {
   const name = combined ? 'All Accounts' : account!.name
   const typeBadge = combined ? null : account!.type
 
+
   return (
     <div className="widget">
       <div className="widget-header">
@@ -79,7 +83,7 @@ export default function AccountWidget({ account, accounts, combined }: Props) {
       </div>
 
       <div className="widget-period-selector">
-        {(['week', 'fortnight', 'month'] as Period[]).map(p => (
+        {(['week', 'fortnight', 'month', '6month', 'year', 'all'] as Period[]).map(p => (
           <button
             key={p}
             className={`period-btn ${period === p ? 'active' : ''}`}
@@ -114,6 +118,7 @@ export default function AccountWidget({ account, accounts, combined }: Props) {
         periodStart={periodStart}
         periodEnd={now}
       />
+
     </div>
   )
 }
