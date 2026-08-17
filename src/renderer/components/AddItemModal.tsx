@@ -27,6 +27,7 @@ export default function AddItemModal({
   onClose,
 }: Props) {
   const [title, setTitle] = useState(editTransaction?.title ?? '')
+  const [description, setDescription] = useState(editTransaction?.description ?? '')
   const [type, setType] = useState<'income' | 'spend'>(editTransaction?.type ?? 'spend')
   const [categoryId, setCategoryId] = useState<number | ''>(editTransaction?.category_id ?? '')
   const [occurredAt, setOccurredAt] = useState(
@@ -61,6 +62,14 @@ export default function AddItemModal({
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
+
+  // The prop is loaded asynchronously by App, so it can arrive or change after this
+  // modal has mounted; useState alone would keep the first snapshot forever. Anything
+  // created via "New..." is persisted before we refetch, so a later prop update
+  // already contains it and this can't lose an inline-created category.
+  useEffect(() => {
+    setLocalCategories(categories)
+  }, [categories])
 
   useEffect(() => {
     loadContextTransactions()
@@ -107,6 +116,7 @@ export default function AddItemModal({
       category_id: categoryId === '' ? null : categoryId,
       amount: cents,
       occurred_at: new Date(occurredAt).toISOString(),
+      description: description.trim() || null,
       recurring_id: editTransaction?.recurring_id ?? null,
     }
 
@@ -152,6 +162,17 @@ export default function AddItemModal({
                 onChange={e => setTitle(e.target.value)}
                 placeholder="e.g. Groceries, Salary"
                 autoFocus
+              />
+            </div>
+
+            <div className="form-field">
+              <label className="form-label">Description <span className="form-label-hint">(optional)</span></label>
+              <textarea
+                className="form-input form-textarea"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Any extra detail about this transaction"
+                rows={2}
               />
             </div>
 

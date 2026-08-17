@@ -122,9 +122,9 @@ export function registerIpcHandlers(): void {
     const db = getDb()
     const timestamp = now()
     const result = db.prepare(
-      `INSERT INTO transactions (account_id, title, type, category_id, amount, occurred_at, recurring_id, created_at, updated_at)
-       VALUES (@account_id, @title, @type, @category_id, @amount, @occurred_at, @recurring_id, @created_at, @updated_at)`
-    ).run({ ...data, created_at: timestamp, updated_at: timestamp })
+      `INSERT INTO transactions (account_id, title, type, category_id, amount, occurred_at, description, recurring_id, created_at, updated_at)
+       VALUES (@account_id, @title, @type, @category_id, @amount, @occurred_at, @description, @recurring_id, @created_at, @updated_at)`
+    ).run({ ...data, description: data.description ?? null, created_at: timestamp, updated_at: timestamp })
     return db.prepare('SELECT * FROM transactions WHERE id = ?').get(result.lastInsertRowid) as Transaction
   })
 

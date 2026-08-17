@@ -69,6 +69,7 @@ db.exec(`
     category_id  INTEGER REFERENCES categories(id),
     amount       INTEGER NOT NULL CHECK (amount > 0),
     occurred_at  TEXT NOT NULL,
+    description  TEXT,
     recurring_id INTEGER REFERENCES recurring_rules(id),
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL

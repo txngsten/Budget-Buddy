@@ -25,6 +25,8 @@ export interface Transaction {
   category_id: number | null
   amount: number
   occurred_at: string
+  /** Optional free-text note; null when not supplied. */
+  description: string | null
   recurring_id: number | null
   created_at: string
   updated_at: string

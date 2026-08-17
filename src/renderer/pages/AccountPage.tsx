@@ -149,16 +149,21 @@ export default function AccountPage({ accountId, allAccounts, categories, onAcco
             return (
               <div key={tx.id} className="transaction-row">
                 <div className="transaction-info">
-                  <span className="transaction-date">
-                    {new Date(tx.occurred_at).toLocaleDateString('en-AU', {
-                      day: 'numeric', month: 'short', year: 'numeric'
-                    })}
-                  </span>
-                  <span className="transaction-title">{tx.title}</span>
-                  {cat && (
-                    <span className="transaction-category" style={{ backgroundColor: cat.colour + '22', color: cat.colour }}>
-                      {getCategoryDisplayName(cat, categoryMap)}
+                  <div className="transaction-info-main">
+                    <span className="transaction-date">
+                      {new Date(tx.occurred_at).toLocaleDateString('en-AU', {
+                        day: 'numeric', month: 'short', year: 'numeric'
+                      })}
                     </span>
+                    <span className="transaction-title">{tx.title}</span>
+                    {cat && (
+                      <span className="transaction-category" style={{ backgroundColor: cat.colour + '22', color: cat.colour }}>
+                        {getCategoryDisplayName(cat, categoryMap)}
+                      </span>
+                    )}
+                  </div>
+                  {tx.description && (
+                    <p className="transaction-description">{tx.description}</p>
                   )}
                 </div>
                 <div className="transaction-right">

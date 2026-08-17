@@ -12,11 +12,15 @@ CREATE TABLE IF NOT EXISTS accounts (
 
 CREATE TABLE IF NOT EXISTS categories (
   id         INTEGER PRIMARY KEY,
-  name       TEXT NOT NULL UNIQUE,
+  name       TEXT NOT NULL,
   colour     TEXT NOT NULL,
+  parent_id  INTEGER REFERENCES categories(id),
   archived   INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_parent_name
+  ON categories(COALESCE(parent_id, 0), name);
 
 CREATE TABLE IF NOT EXISTS recurring_rules (
   id            INTEGER PRIMARY KEY,
@@ -41,6 +45,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   category_id  INTEGER REFERENCES categories(id),
   amount       INTEGER NOT NULL CHECK (amount > 0),
   occurred_at  TEXT NOT NULL,
+  description  TEXT,
   recurring_id INTEGER REFERENCES recurring_rules(id),
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL

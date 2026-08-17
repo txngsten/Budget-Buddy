@@ -493,6 +493,17 @@ select {
   margin-bottom: 6px;
 }
 
+.form-label-hint {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 44px;
+  font-family: inherit;
+}
+
 /* Toggle group */
 .toggle-group {
   display: flex;
@@ -625,9 +636,25 @@ select {
 
 .transaction-info {
   display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.transaction-info-main {
+  display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.transaction-description {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .transaction-date {
@@ -822,7 +849,79 @@ select {
 
 .charts-row .chart-section {
   flex: 1;
-  min-width: 250px;
+  min-width: 320px;
+}
+
+/* Pie chart with a legend down the side rather than underneath */
+.pie-with-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pie-with-legend-chart {
+  flex: 1 1 170px;
+  min-width: 150px;
+}
+
+.pie-legend {
+  flex: 1 1 150px;
+  min-width: 140px;
+  max-height: 200px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pie-legend-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: default;
+}
+
+.pie-legend-item.drillable {
+  cursor: pointer;
+}
+
+.pie-legend-item.drillable:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.pie-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pie-legend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pie-legend-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.pie-legend-pct {
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: right;
 }
 
 .chart-section {

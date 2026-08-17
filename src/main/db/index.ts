@@ -67,6 +67,7 @@ function runSchema(): void {
       category_id  INTEGER REFERENCES categories(id),
       amount       INTEGER NOT NULL CHECK (amount > 0),
       occurred_at  TEXT NOT NULL,
+      description  TEXT,
       recurring_id INTEGER REFERENCES recurring_rules(id),
       created_at   TEXT NOT NULL,
       updated_at   TEXT NOT NULL
@@ -131,6 +132,18 @@ function runMigrations(): void {
           `)
         })()
         db.pragma('foreign_keys = ON')
+      },
+    },
+    {
+      name: '002_add_transaction_description',
+      up() {
+        const hasDescription = (db.prepare('PRAGMA table_info(transactions)').all() as { name: string }[])
+          .some(col => col.name === 'description')
+
+        if (hasDescription) return
+
+        // Plain additive column — nullable, no default, so existing rows are untouched.
+        db.exec('ALTER TABLE transactions ADD COLUMN description TEXT')
       },
     },
   ]
