@@ -56,6 +56,28 @@ export function buildTopLevelSlices(
     .sort((a, b) => b.value - a.value)
 }
 
+/**
+ * Which slice a transaction belongs to, matching the slices produced above.
+ * `parent === null` is the top-level view; otherwise it is the drill-down into that
+ * category, and transactions outside that family return null (they are not charted).
+ */
+export function keyForTransaction(
+  tx: Transaction,
+  categoryMap: Map<number, Category>,
+  parent: Category | null
+): string | null {
+  const cat = tx.category_id ? categoryMap.get(tx.category_id) : null
+
+  if (parent === null) {
+    if (!cat) return 'uncategorised'
+    return String(resolveTopLevel(cat, categoryMap).id)
+  }
+
+  if (!cat) return null
+  if (resolveTopLevel(cat, categoryMap).id !== parent.id) return null
+  return String(cat.id)
+}
+
 /** Break a single top-level category down into its subcategories (plus its own direct transactions). */
 export function buildDrillSlices(
   transactions: Transaction[],

@@ -958,8 +958,28 @@ select {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
   font-size: 11px;
   color: var(--text-secondary);
+  cursor: default;
+}
+
+.category-legend-item.drillable {
+  cursor: pointer;
+}
+
+.category-legend-item.drillable:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.chart-title-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .category-legend-dot {
@@ -1183,6 +1203,23 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.category-bar-row.drillable {
+  cursor: pointer;
+}
+
+.category-bar-row.drillable:hover {
+  background: var(--bg-secondary);
 }
 
 .category-bar-label {

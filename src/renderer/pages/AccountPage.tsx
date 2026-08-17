@@ -5,6 +5,9 @@ import {
 import type { Account, Category, Transaction } from '../../shared/types'
 import { formatAud } from '../lib/format'
 import { getCategoryDisplayName } from '../lib/categories'
+import {
+  buildTopLevelSlices, buildDrillSlices, keyForTransaction, type Slice,
+} from '../lib/categoryBreakdown'
 import AddItemModal from '../components/AddItemModal'
 import ConfirmDialog from '../components/ConfirmDialog'
 import DateRangeSlider from '../components/DateRangeSlider'
@@ -220,36 +223,43 @@ function CategorySpendColumnChart({
   categoryMap: Map<number, Category>
 }) {
   const [bucketMode, setBucketMode] = useState<BucketMode>('weekly')
+  const [drillId, setDrillId] = useState<number | null>(null)
 
   const spendTxs = transactions.filter(t => t.type === 'spend')
+
+  // Series match the pie charts: top-level categories, or the subcategories of the
+  // one being drilled into.
+  const drillCategory = drillId !== null ? categoryMap.get(drillId) ?? null : null
+  const topLevelSlices = buildTopLevelSlices(spendTxs, categoryMap)
+  const drillSlices = drillCategory ? buildDrillSlices(spendTxs, categoryMap, drillCategory) : []
+  const showingDrill = drillCategory !== null && drillSlices.length > 0
+  const slices = showingDrill ? drillSlices : topLevelSlices
+
   if (spendTxs.length === 0) return null
 
-  const bucketMap = new Map<string, Record<string, number>>()
+  const bucketMap = new Map<string, { label: string; values: Record<string, number> }>()
   const categoryKeys = new Map<string, { name: string; colour: string }>()
 
+  for (const slice of slices) {
+    categoryKeys.set(`cat_${slice.key}`, { name: slice.name, colour: slice.colour })
+  }
+
   for (const tx of spendTxs) {
-    const d = new Date(tx.occurred_at)
-    const label = getBucketLabel(d, bucketMode)
-    const cat = tx.category_id ? categoryMap.get(tx.category_id) : null
-    const key = cat ? `cat_${cat.id}` : 'cat_uncategorised'
+    const sliceKey = keyForTransaction(tx, categoryMap, showingDrill ? drillCategory : null)
+    if (sliceKey === null) continue
+    const key = `cat_${sliceKey}`
+    if (!categoryKeys.has(key)) continue
 
-    if (!categoryKeys.has(key)) {
-      categoryKeys.set(key, {
-        name: cat ? getCategoryDisplayName(cat, categoryMap) : 'Uncategorised',
-        colour: cat?.colour ?? '#8e8e93',
-      })
-    }
-
-    const bucket = bucketMap.get(label) ?? {}
-    bucket[key] = (bucket[key] ?? 0) + tx.amount
-    bucketMap.set(label, bucket)
+    const { label, sortKey } = getBucket(new Date(tx.occurred_at), bucketMode)
+    const bucket = bucketMap.get(sortKey) ?? { label, values: {} }
+    bucket.values[key] = (bucket.values[key] ?? 0) + tx.amount
+    bucketMap.set(sortKey, bucket)
   }
 
   const sortedBuckets = Array.from(bucketMap.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
 
-  const data = sortedBuckets.map(([bucket, cats]) => ({ bucket, ...cats }))
-  const allCatKeys = Array.from(categoryKeys.entries())
+  const data = sortedBuckets.map(([, bucket]) => ({ bucket: bucket.label, ...bucket.values }))
 
   const modeLabels: Record<BucketMode, string> = {
     weekly: 'Weekly',
@@ -257,20 +267,36 @@ function CategorySpendColumnChart({
     monthly: 'Monthly',
   }
 
+  function drillInto(slice: Slice) {
+    if (showingDrill) return
+    if (slice.topLevelId === null || slice.breakdownCount < 2) return
+    setDrillId(slice.topLevelId)
+  }
+
   return (
     <div className="chart-section">
       <div className="chart-title-row">
-        <h4 className="chart-title">{modeLabels[bucketMode]} Spend by Category</h4>
-        <div className="period-btn-group">
-          {(['weekly', 'fortnightly', 'monthly'] as BucketMode[]).map(m => (
-            <button
-              key={m}
-              className={`period-btn ${bucketMode === m ? 'active' : ''}`}
-              onClick={() => setBucketMode(m)}
-            >
-              {modeLabels[m]}
+        <h4 className="chart-title">
+          {modeLabels[bucketMode]} Spend by Category
+          {showingDrill ? ` — ${drillCategory!.name}` : ''}
+        </h4>
+        <div className="chart-title-controls">
+          {showingDrill && (
+            <button className="btn btn-small" onClick={() => setDrillId(null)}>
+              ← Back
             </button>
-          ))}
+          )}
+          <div className="period-btn-group">
+            {(['weekly', 'fortnightly', 'monthly'] as BucketMode[]).map(m => (
+              <button
+                key={m}
+                className={`period-btn ${bucketMode === m ? 'active' : ''}`}
+                onClick={() => setBucketMode(m)}
+              >
+                {modeLabels[m]}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <ResponsiveContainer width="100%" height={240}>
@@ -297,26 +323,52 @@ function CategorySpendColumnChart({
               fontSize: 13,
             }}
           />
-          {allCatKeys.map(([key, info]) => (
-            <Bar key={key} dataKey={key} fill={info.colour} name={key} radius={[3, 3, 0, 0]} />
-          ))}
+          {slices.map(slice => {
+            const drillable = !showingDrill && slice.topLevelId !== null && slice.breakdownCount >= 2
+            return (
+              <Bar
+                key={`cat_${slice.key}`}
+                dataKey={`cat_${slice.key}`}
+                fill={slice.colour}
+                name={`cat_${slice.key}`}
+                radius={[3, 3, 0, 0]}
+                cursor={drillable ? 'pointer' : 'default'}
+                onClick={() => drillInto(slice)}
+              />
+            )
+          })}
         </BarChart>
       </ResponsiveContainer>
       <div className="category-legend">
-        {allCatKeys.map(([key, info]) => (
-          <span key={key} className="category-legend-item">
-            <span className="category-legend-dot" style={{ backgroundColor: info.colour }} />
-            {info.name}
-          </span>
-        ))}
+        {slices.map(slice => {
+          const drillable = !showingDrill && slice.topLevelId !== null && slice.breakdownCount >= 2
+          return (
+            <button
+              key={slice.key}
+              type="button"
+              className={`category-legend-item ${drillable ? 'drillable' : ''}`}
+              onClick={() => drillInto(slice)}
+              disabled={!drillable}
+              title={drillable ? `View subcategories of ${slice.name}` : slice.name}
+            >
+              <span className="category-legend-dot" style={{ backgroundColor: slice.colour }} />
+              {slice.name}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function getBucketLabel(date: Date, mode: BucketMode): string {
+/** Bucket a date, returning its display label plus a chronologically sortable key. */
+function getBucket(date: Date, mode: BucketMode): { label: string; sortKey: string } {
   if (mode === 'monthly') {
-    return date.toLocaleDateString('en-AU', { month: 'short', year: '2-digit' })
+    const start = new Date(date.getFullYear(), date.getMonth(), 1)
+    return {
+      label: date.toLocaleDateString('en-AU', { month: 'short', year: '2-digit' }),
+      sortKey: isoDay(start),
+    }
   }
 
   const monday = new Date(date)
@@ -330,8 +382,20 @@ function getBucketLabel(date: Date, mode: BucketMode): string {
     const fortnight = Math.floor(daysSinceStart / 14)
     const fnStart = new Date(yearStart)
     fnStart.setDate(fnStart.getDate() + fortnight * 14)
-    return fnStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+    return {
+      label: fnStart.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+      sortKey: isoDay(fnStart),
+    }
   }
 
-  return monday.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+  return {
+    label: monday.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+    sortKey: isoDay(monday),
+  }
+}
+
+function isoDay(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
 }

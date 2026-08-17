@@ -1,6 +1,11 @@
 # Session Log
 
-## Session 3 — 2026-08-16
+## Session 3 — 2026-08-16 → 08-17
+
+### Setup
+
+- `better-sqlite3` was again compiled for x86_64 and failed to load under Electron (`incompatible architecture ... have 'x86_64', need 'arm64'`). Fixed with `npx @electron/rebuild -m . -o better-sqlite3`, same as Session 1. The `postinstall` script exists but the module had drifted back out of sync.
+- `scripts/` has its own `node_modules` with a plain-Node build of `better-sqlite3`, which is why the `npx tsx scripts/*.ts` tests keep working after the Electron rebuild — Node resolves the nested copy first.
 
 ### Database Safety
 
@@ -46,7 +51,7 @@ Purely additive, nullable column — no table rebuild, existing rows untouched.
 
 ---
 
-### Phase 3 — Fix: `AddItemModal` Stale Category Snapshot
+### Phase 3 — Fix: `AddItemModal` Stale Category Snapshot *(follow-up request, 2026-08-17)*
 
 `const [localCategories, setLocalCategories] = useState(categories)` seeded state from the prop once and never re-synced, so a modal that mounted before `App`'s async `categories.list()` resolved kept an empty list for its whole lifetime — the category dropdown was empty and both context pies collapsed into a single grey "Uncategorised" slice.
 

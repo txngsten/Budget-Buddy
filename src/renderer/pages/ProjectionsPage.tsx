@@ -4,7 +4,7 @@ import {
 } from 'recharts'
 import type { Account, Category, Transaction } from '../../shared/types'
 import { formatAud } from '../lib/format'
-import { getCategoryDisplayName } from '../lib/categories'
+import { buildTopLevelSlices, buildDrillSlices, type Slice } from '../lib/categoryBreakdown'
 
 interface Props {
   accounts: Account[]
@@ -24,6 +24,7 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
   const [horizonCustom, setHorizonCustom] = useState('30')
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [hiddenLines, setHiddenLines] = useState<Set<string>>(new Set())
+  const [spendDrillId, setSpendDrillId] = useState<number | null>(null)
 
   const lookback = lookbackPreset === 'custom' ? (parseInt(lookbackCustom) || 30) : lookbackPreset
   const horizon = horizonPreset === 'custom' ? (parseInt(horizonCustom) || 30) : horizonPreset
@@ -154,29 +155,33 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
 
   const xInterval = Math.max(0, Math.floor(chartData.length / 8) - 1)
 
-  // Category breakdown for the horizon
-  const categorySpend = new Map<string, { name: string; value: number; colour: string }>()
+  // Category breakdown for the horizon — top-level categories, drillable into subcategories
   const categoryMap = new Map(categories.map(c => [c.id, c]))
+  const lookbackSpendTxs = lookbackTxs.filter(
+    t => t.type === 'spend' && activeAccounts.some(a => a.id === t.account_id)
+  )
 
-  for (const tx of lookbackTxs.filter(t => t.type === 'spend' && activeAccounts.some(a => a.id === t.account_id))) {
-    const cat = tx.category_id ? categoryMap.get(tx.category_id) : null
-    const key = cat ? String(cat.id) : 'uncategorised'
-    const entry = categorySpend.get(key) ?? {
-      name: cat ? getCategoryDisplayName(cat, categoryMap) : 'Uncategorised',
-      value: 0,
-      colour: cat?.colour ?? '#8e8e93',
-    }
-    entry.value += tx.amount
-    categorySpend.set(key, entry)
+  const spendDrillCategory = spendDrillId !== null ? categoryMap.get(spendDrillId) ?? null : null
+  const topLevelSpend = buildTopLevelSlices(lookbackSpendTxs, categoryMap)
+  const drillSpend = spendDrillCategory
+    ? buildDrillSlices(lookbackSpendTxs, categoryMap, spendDrillCategory)
+    : []
+  const showingSpendDrill = spendDrillCategory !== null && drillSpend.length > 0
+
+  // Historical totals scaled from the lookback window out across the horizon.
+  const project = (s: Slice) => ({ ...s, value: Math.round((s.value / lookback) * horizon) })
+  const projectedTopLevelSpend = topLevelSpend.map(project)
+  const projectedCategorySpend = (showingSpendDrill ? drillSpend : topLevelSpend).map(project)
+
+  function drillIntoSpend(slice: Slice) {
+    if (showingSpendDrill) return
+    if (slice.topLevelId === null || slice.breakdownCount < 2) return
+    setSpendDrillId(slice.topLevelId)
   }
-
-  const projectedCategorySpend = Array.from(categorySpend.values())
-    .map(c => ({ ...c, value: Math.round((c.value / lookback) * horizon) }))
-    .sort((a, b) => b.value - a.value)
 
   // Summary cards
   const projectedCombinedNet = Math.round(combinedRates.dailyNet * horizon)
-  const biggestCategory = projectedCategorySpend[0] ?? null
+  const biggestCategory = projectedTopLevelSpend[0] ?? null
   const endBalances = activeAccounts.map(a => ({
     name: a.name,
     balance: Math.round(computeBalance(a) + (accountRates.get(a.id)?.dailyNet ?? 0) * horizon),
@@ -378,7 +383,17 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
           </section>
 
           <section className="chart-section">
-            <h4 className="chart-title">Projected Spend by Category ({horizon}d)</h4>
+            <div className="chart-title-row">
+              <h4 className="chart-title">
+                Projected Spend by Category ({horizon}d)
+                {showingSpendDrill ? ` — ${spendDrillCategory!.name}` : ''}
+              </h4>
+              {showingSpendDrill && (
+                <button className="btn btn-small" onClick={() => setSpendDrillId(null)}>
+                  ← Back
+                </button>
+              )}
+            </div>
             {projectedCategorySpend.length === 0 ? (
               <p className="settings-empty">No spend data in the lookback period.</p>
             ) : (
@@ -386,8 +401,16 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
                 {projectedCategorySpend.map(c => {
                   const maxVal = projectedCategorySpend[0].value
                   const pct = maxVal > 0 ? (c.value / maxVal) * 100 : 0
+                  const drillable = !showingSpendDrill && c.topLevelId !== null && c.breakdownCount >= 2
                   return (
-                    <div key={c.name} className="category-bar-row">
+                    <button
+                      key={c.key}
+                      type="button"
+                      className={`category-bar-row ${drillable ? 'drillable' : ''}`}
+                      onClick={() => drillIntoSpend(c)}
+                      disabled={!drillable}
+                      title={drillable ? `View subcategories of ${c.name}` : c.name}
+                    >
                       <span className="category-bar-label">{c.name}</span>
                       <div className="category-bar-track">
                         <div
@@ -396,7 +419,7 @@ export default function ProjectionsPage({ accounts, categories }: Props) {
                         />
                       </div>
                       <span className="category-bar-value">{formatAud(c.value)}</span>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
